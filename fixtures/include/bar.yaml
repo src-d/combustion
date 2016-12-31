@@ -1,0 +1,6 @@
+include:
+  folder/qux.yaml:
+
+systemd:
+  units:
+    - name: bar

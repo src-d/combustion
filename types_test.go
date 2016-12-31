@@ -58,7 +58,7 @@ func TestConfigResolve(t *testing.T) {
 	}
 
 	sort.Strings(names)
-	assert.EqualValues(t, names, []string{"bar", "baz", "foo", "qux", "qux"})
+	assert.EqualValues(t, []string{"bar", "baz", "foo", "qux", "qux"}, names)
 }
 
 func TestConfigResolveCircular(t *testing.T) {
@@ -75,5 +75,30 @@ func TestConfigResolveCircular(t *testing.T) {
 
 	err = c.Resolve("fixtures")
 	assert.IsType(t, &ErrCircularDependency{}, err)
+
+}
+
+func TestConfigResolveInterpolate(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"include:\n" +
+		"  interpolate/foo.yaml:\n" +
+		"    foo: bar\n" +
+		"",
+	)
+
+	var c Config
+	err := yaml.Unmarshal(input, &c)
+	assert.NoError(t, err)
+
+	err = c.Resolve("fixtures")
+	assert.NoError(t, err)
+
+	var names []string
+	for _, u := range c.Config.Systemd.Units {
+		names = append(names, string(u.Name))
+	}
+
+	assert.EqualValues(t, []string{"bar"}, names)
 
 }

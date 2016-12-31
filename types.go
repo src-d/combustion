@@ -17,27 +17,22 @@ type Config struct {
 }
 
 func (c *Config) Resolve(base string) error {
-	history := make(map[string]bool, 0)
-	return c.doResolve(base, history)
+	return c.doResolve(base, make(Stack, 0))
 }
 
-func (c *Config) doResolve(base string, history map[string]bool) error {
-	for file, vars := range c.File {
+func (c *Config) doResolve(base string, s Stack) error {
+	for file, _ := range c.File {
 		fullpath := filepath.Join(base, string(file))
-		fmt.Println(base, fullpath, vars)
-
-		if history[fullpath] {
-			return fmt.Errorf("loop %q", fullpath)
+		if s.In(fullpath) {
+			return &ErrCircularDependency{s, fullpath}
 		}
-
-		history[fullpath] = true
 
 		src, err := file.Load(base)
 		if err != nil {
 			return err
 		}
 
-		if err := src.doResolve(filepath.Dir(fullpath), history); err != nil {
+		if err := src.doResolve(filepath.Dir(fullpath), append(s, fullpath)); err != nil {
 			return err
 		}
 
@@ -67,4 +62,28 @@ func (f ConfigFile) Load(base string) (Config, error) {
 	}
 
 	return c, yaml.Unmarshal(y, &c)
+}
+
+type Stack []string
+
+func (s Stack) In(filename string) bool {
+	for _, f := range s {
+		if f == filename {
+			return true
+		}
+	}
+
+	return false
+}
+
+type ErrCircularDependency struct {
+	Stack Stack
+	File  string
+}
+
+func (err *ErrCircularDependency) Error() string {
+	return fmt.Sprintf(
+		"circular-dependency detected including %q: %s",
+		err.File, err.Stack,
+	)
 }

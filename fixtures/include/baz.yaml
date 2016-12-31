@@ -1,3 +1,6 @@
+include:
+  folder/qux.yaml:
+
 systemd:
   units:
     - name: baz

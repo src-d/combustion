@@ -3,12 +3,11 @@ package combustion
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"testing"
 
-	"sort"
-
-	"github.com/docker/docker/pkg/testutil/assert"
 	"github.com/ghodss/yaml"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestUnmarshal(t *testing.T) {
@@ -30,10 +29,10 @@ systemd:
 
 	var c Config
 	err := yaml.Unmarshal(input, &c)
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
 	js, err := json.MarshalIndent(c, "", "  ")
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 	fmt.Println(string(js))
 }
 
@@ -48,10 +47,10 @@ func TestConfigResolve(t *testing.T) {
 
 	var c Config
 	err := yaml.Unmarshal(input, &c)
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
 	err = c.Resolve("fixtures")
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
 	var names []string
 	for _, u := range c.Config.Systemd.Units {
@@ -59,5 +58,22 @@ func TestConfigResolve(t *testing.T) {
 	}
 
 	sort.Strings(names)
-	assert.DeepEqual(t, names, []string{"bar", "baz", "foo", "qux"})
+	assert.EqualValues(t, names, []string{"bar", "baz", "foo", "qux", "qux"})
+}
+
+func TestConfigResolveCircular(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"include:\n" +
+		"  circular/foo.yaml:\n" +
+		"",
+	)
+
+	var c Config
+	err := yaml.Unmarshal(input, &c)
+	assert.NoError(t, err)
+
+	err = c.Resolve("fixtures")
+	assert.IsType(t, &ErrCircularDependency{}, err)
+
 }

@@ -2,34 +2,146 @@ package combustion
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/url"
 	"path/filepath"
 	"text/template"
 
-	"github.com/ghodss/yaml"
-
 	"github.com/coreos/ignition/config"
 	"github.com/coreos/ignition/config/types"
+	"github.com/coreos/ignition/config/validate/report"
+	"github.com/ghodss/yaml"
+	"github.com/vincent-petithory/dataurl"
+	"srcd.works/go-billy.v1"
+	"srcd.works/go-billy.v1/os"
 )
 
+var DefaultIgnitionVersion = types.IgnitionVersion{Major: 2}
+
+// FileSystem used in any file operation
+var FileSystem billy.Filesystem = os.New("")
+
 type Config struct {
-	Include
+	Includes map[string]Values `json:"include,omitempty"`
+	Output   string            `json:"output,omitempty"`
 	types.Config
+
+	dir  string // dir where the config is located
+	name string // config name
 }
 
-func (c *Config) Resolve(base string) error {
-	return c.doResolve(base, make(Stack, 0))
+// NewConfigFromFile opens the given file and calls NewConfig with the given
+// values
+func NewConfigFromFile(filename string, values map[string]string) (*Config, error) {
+	file, err := FileSystem.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewConfig(file, filename, values)
 }
 
-func (c *Config) doResolve(base string, s Stack) error {
-	for file, values := range c.File {
-		fullpath := filepath.Join(base, string(file))
+// NewConfig returns a new Config unmashaling the r content interpolated with
+// the given values. A dir, should be provided to be able to read and resolve
+// all the includes
+func NewConfig(r io.Reader, filename string, values map[string]string) (*Config, error) {
+	c, err := newConfig(r, filename, values)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, c.resolve()
+}
+
+func newConfig(r io.Reader, filename string, values map[string]string) (*Config, error) {
+	c := &Config{}
+	c.dir, c.name = filepath.Split(filename)
+
+	if err := c.Unmarshal(r, values); err != nil {
+		return nil, err
+	}
+
+	if c.Ignition.Version.Major == 0 {
+		c.Ignition.Version = DefaultIgnitionVersion
+	}
+
+	return c, nil
+}
+
+// Unmarshal unmarshal the r content into Config, the content is interpolated
+// using the given values
+func (c *Config) Unmarshal(r io.Reader, values map[string]string) error {
+	y, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	y, err = c.interpolate(y, values)
+	if err != nil {
+		return err
+	}
+
+	defer c.fixStorageFiles()
+	return yaml.Unmarshal(y, c)
+}
+
+func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
+	t, err := template.New("t").Parse(string(content))
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bytes.NewBuffer(nil)
+	if err := t.Execute(buf, v); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func (c *Config) fixStorageFiles() {
+	// all the errors are ignored because if the url is real malformed will be
+	// identified by the validator
+	for i, f := range c.Storage.Files {
+		s := f.Contents.Source
+		u, err := dataurl.DecodeString(s.String())
+		if err == nil || err.Error() != "missing data prefix" {
+			continue
+		}
+
+		raw, err := url.QueryUnescape(s.String())
+		if err != nil {
+			continue
+		}
+
+		u = dataurl.New([]byte(raw), "text/plain")
+		pu, _ := url.Parse(u.String())
+		f.Contents.Source = types.Url(*pu)
+
+		c.Storage.Files[i] = f
+	}
+}
+
+func (c *Config) resolve() error {
+	return c.doResolve(c.dir, make(stack, 0))
+}
+
+func (c *Config) doResolve(dir string, s stack) error {
+	for file, values := range c.Includes {
+		fullpath := filepath.Join(dir, string(file))
 		if s.In(fullpath) {
 			return &ErrCircularDependency{s, fullpath}
 		}
 
-		src, err := file.Load(base, values)
+		f, err := FileSystem.Open(fullpath)
+		if err != nil {
+			return err
+		}
+
+		src, err := newConfig(f, fullpath, values)
 		if err != nil {
 			return err
 		}
@@ -44,54 +156,56 @@ func (c *Config) doResolve(base string, s Stack) error {
 	return nil
 }
 
-func (c *Config) append(src Config) {
+func (c *Config) append(src *Config) {
 	c.Config = config.Append(c.Config, src.Config)
 }
 
-type Include struct {
-	File map[ConfigFile]map[string]string `json:"include,omitempty"`
+func (c *Config) SaveTo(dir string) (report.Report, error) {
+	var r report.Report
+	if c.Output == "" {
+		return r, nil
+	}
+
+	fullpath := FileSystem.Join(dir, c.Output)
+	file, err := FileSystem.Create(fullpath)
+	if err != nil {
+		return r, err
+	}
+
+	return c.Render(file)
 }
 
-type ConfigFile string
-
-func (f ConfigFile) Load(base string, values map[string]string) (Config, error) {
-	var c Config
-
-	fullpath := filepath.Join(base, string(f))
-	y, err := ioutil.ReadFile(fullpath)
+func (c *Config) Render(w io.Writer) (report.Report, error) {
+	content, r, err := c.marshalToIgnition()
 	if err != nil {
-		return c, err
+		return r, err
 	}
 
-	y, err = f.interpolate(y, values)
-	if err != nil {
-		return c, err
-	}
-
-	return c, yaml.Unmarshal(y, &c)
+	_, err = w.Write(content)
+	return r, err
 }
 
-func (f ConfigFile) interpolate(content []byte, values map[string]string) ([]byte, error) {
-	if len(values) == 0 {
-		return content, nil
-	}
+func (c *Config) marshalToIgnition() ([]byte, report.Report, error) {
+	var r report.Report
 
-	t, err := template.New("t").Parse(string(content))
+	json, err := json.MarshalIndent(c.Config, "", "  ")
 	if err != nil {
-		return nil, err
+		return nil, r, err
 	}
 
-	buf := bytes.NewBuffer(nil)
-	if err := t.Execute(buf, values); err != nil {
-		return nil, err
+	_, r, err = config.ParseFromLatest(json)
+	if err != nil {
+		return json, r, err
 	}
 
-	return buf.Bytes(), nil
+	return json, r, nil
 }
 
-type Stack []string
+// Values interpolation values to replace on the Config
+type Values map[string]string
+type stack []string
 
-func (s Stack) In(filename string) bool {
+func (s stack) In(filename string) bool {
 	for _, f := range s {
 		if f == filename {
 			return true
@@ -102,7 +216,7 @@ func (s Stack) In(filename string) bool {
 }
 
 type ErrCircularDependency struct {
-	Stack Stack
+	Stack stack
 	File  string
 }
 

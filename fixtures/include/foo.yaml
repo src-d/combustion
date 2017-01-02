@@ -1,6 +1,0 @@
-include:
-    baz.yaml:
-
-systemd:
-  units:
-    - name: foo

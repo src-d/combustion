@@ -1,42 +1,35 @@
 package combustion
 
 import (
+	"bytes"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"testing"
 
-	"github.com/ghodss/yaml"
+	"github.com/coreos/ignition/config/types"
 	"github.com/stretchr/testify/assert"
+	"srcd.works/go-billy.v1/memory"
 )
 
-func TestUnmarshal(t *testing.T) {
-	input := []byte(`---
-systemd:
-  units:
-    - name: installer.service
-      enable: true
-      contents: |
-        [Unit]
-        Requires=network-online.target
-        After=network-online.target
-        [Service]
-        Type=simple
-        ExecStart=/opt/installer
-        [Install]
-        WantedBy=multi-user.target
-    `)
-
-	var c Config
-	err := yaml.Unmarshal(input, &c)
-	assert.NoError(t, err)
-
-	js, err := json.MarshalIndent(c, "", "  ")
-	assert.NoError(t, err)
-	fmt.Println(string(js))
+func init() {
+	FileSystem = memory.New()
 }
 
-func TestConfigResolve(t *testing.T) {
+func TestNewConfig(t *testing.T) {
+	WriteFixtures([][]string{{
+		"fixtures/include/foo.yaml",
+		"include:\n    baz.yaml:\n\nsystemd:\n  units:\n   - name: foo",
+	}, {
+		"fixtures/include/baz.yaml",
+		"include:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: baz",
+	}, {
+		"fixtures/include/bar.yaml",
+		"include:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: bar",
+	}, {
+		"fixtures/include/folder/qux.yaml",
+		"systemd:\n  units:\n   - name: qux",
+	}})
+
 	input := []byte("" +
 		"---\n" +
 		"include:\n" +
@@ -45,11 +38,7 @@ func TestConfigResolve(t *testing.T) {
 		"",
 	)
 
-	var c Config
-	err := yaml.Unmarshal(input, &c)
-	assert.NoError(t, err)
-
-	err = c.Resolve("fixtures")
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
 	assert.NoError(t, err)
 
 	var names []string
@@ -62,6 +51,9 @@ func TestConfigResolve(t *testing.T) {
 }
 
 func TestConfigResolveCircular(t *testing.T) {
+	WriteFixture("fixtures/circular/foo.yaml", "include:\n    bar.yaml:")
+	WriteFixture("fixtures/circular/bar.yaml", "include:\n    foo.yaml:")
+
 	input := []byte("" +
 		"---\n" +
 		"include:\n" +
@@ -69,16 +61,13 @@ func TestConfigResolveCircular(t *testing.T) {
 		"",
 	)
 
-	var c Config
-	err := yaml.Unmarshal(input, &c)
-	assert.NoError(t, err)
-
-	err = c.Resolve("fixtures")
+	_, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
 	assert.IsType(t, &ErrCircularDependency{}, err)
-
 }
 
 func TestConfigResolveInterpolate(t *testing.T) {
+	WriteFixture("fixtures/interpolate/foo.yaml", "systemd:\n  units:\n    - name: {{.foo}}")
+
 	input := []byte("" +
 		"---\n" +
 		"include:\n" +
@@ -87,11 +76,7 @@ func TestConfigResolveInterpolate(t *testing.T) {
 		"",
 	)
 
-	var c Config
-	err := yaml.Unmarshal(input, &c)
-	assert.NoError(t, err)
-
-	err = c.Resolve("fixtures")
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
 	assert.NoError(t, err)
 
 	var names []string
@@ -100,5 +85,48 @@ func TestConfigResolveInterpolate(t *testing.T) {
 	}
 
 	assert.EqualValues(t, []string{"bar"}, names)
+}
 
+func TestConfigRender(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"systemd:\n" +
+		"  units:\n" +
+		"    - name: installer.service\n" +
+		"      enable: true\n" +
+		"      contents: foo\n" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
+	assert.NoError(t, err)
+
+	buf := bytes.NewBuffer(nil)
+	r, err := c.Render(buf)
+	assert.Equal(t, r.IsFatal(), false)
+	assert.NoError(t, err)
+
+	var result types.Config
+	err = json.Unmarshal(buf.Bytes(), &result)
+	assert.NoError(t, err)
+
+	assert.Equal(t, DefaultIgnitionVersion, result.Ignition.Version)
+	assert.Equal(t, 1, len(result.Systemd.Units))
+}
+
+func WriteFixtures(fixtures [][]string) {
+	for _, f := range fixtures {
+		WriteFixture(f[0], f[1])
+	}
+}
+
+func WriteFixture(path, content string) {
+	f, err := FileSystem.Create(path)
+	if err != nil {
+		panic(err)
+	}
+
+	if _, err := f.Write([]byte(content)); err != nil {
+		panic(err)
+	}
 }

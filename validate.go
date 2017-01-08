@@ -12,8 +12,20 @@ import (
 func (c *Config) validate() report.Report {
 	var r report.Report
 
+	checkNetworkdUnits(c.Config, &r)
 	checkSystemdUnits(c.Config, &r)
 	return r
+}
+
+func checkNetworkdUnits(cfg types.Config, r *report.Report) {
+	for _, u := range cfg.Networkd.Units {
+		if err := validateUnitContent(u.Contents); err != nil {
+			r.Add(report.Entry{
+				Kind:    report.EntryError,
+				Message: err.Error(),
+			})
+		}
+	}
 }
 
 func checkSystemdUnits(cfg types.Config, r *report.Report) {

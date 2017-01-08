@@ -7,7 +7,60 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestValidate(t *testing.T) {
+func TestValidateNetworkd(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"networkd:\n" +
+		"  units:\n" +
+		"    - name: installer.service\n" +
+		"      contents: |\n" +
+		"        [Foo]\n" +
+		"        qux=qux\n" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/valid.yaml", nil)
+	assert.NoError(t, err)
+
+	r := c.validate()
+	assert.Len(t, r.Entries, 0)
+}
+
+func TestValidateNetworkdEmpty(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"networkd:\n" +
+		"  units:\n" +
+		"    - name: installer.service\n" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/empty.yaml", nil)
+	assert.NoError(t, err)
+
+	r := c.validate()
+	assert.Len(t, r.Entries, 1)
+}
+
+func TestValidateNetworkdMalformed(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"networkd:\n" +
+		"  units:\n" +
+		"    - name: installer.service\n" +
+		"      contents: |\n" +
+		"        [Foo\n" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/malformed.yaml", nil)
+	assert.NoError(t, err)
+
+	r := c.validate()
+	assert.Len(t, r.Entries, 1)
+}
+
+func TestValidateSystemd(t *testing.T) {
 	input := []byte("" +
 		"---\n" +
 		"systemd:\n" +
@@ -26,7 +79,7 @@ func TestValidate(t *testing.T) {
 	assert.Len(t, r.Entries, 0)
 }
 
-func TestValidateMalformed(t *testing.T) {
+func TestValidateSystemdMalformed(t *testing.T) {
 	input := []byte("" +
 		"---\n" +
 		"systemd:\n" +
@@ -44,7 +97,7 @@ func TestValidateMalformed(t *testing.T) {
 	assert.Len(t, r.Entries, 1)
 }
 
-func TestValidateEmpty(t *testing.T) {
+func TestValidateSystemdEmpty(t *testing.T) {
 	input := []byte("" +
 		"---\n" +
 		"systemd:\n" +
@@ -60,7 +113,7 @@ func TestValidateEmpty(t *testing.T) {
 	assert.Len(t, r.Entries, 1)
 }
 
-func TestValidateEmptyValidDropIn(t *testing.T) {
+func TestValidateSystemdEmptyValidDropIn(t *testing.T) {
 	input := []byte("" +
 		"---\n" +
 		"systemd:\n" +
@@ -81,7 +134,7 @@ func TestValidateEmptyValidDropIn(t *testing.T) {
 	assert.Len(t, r.Entries, 0)
 }
 
-func TestValidateMalformedDropIn(t *testing.T) {
+func TestValidateSystemdMalformedDropIn(t *testing.T) {
 	input := []byte("" +
 		"---\n" +
 		"systemd:\n" +

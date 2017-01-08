@@ -1,6 +1,4 @@
 ---
-output: foo.json
-
 systemd:
   units:
     - name: installer.service

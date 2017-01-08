@@ -30,6 +30,7 @@ type ccTranspiler struct {
 
 func (t *ccTranspiler) TranspileIgnition(c *types.Config) {
 	t.doStorage(&c.Storage)
+	t.doSystemd(&c.Systemd)
 }
 
 func IsZero(value interface{}) bool {

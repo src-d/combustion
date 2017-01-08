@@ -1,5 +1,7 @@
 ---
-output: install-reboot.json
+output: install-reboot.yaml
+type: cloud-config
+
 include:
   includes/installer-service.yaml:
 

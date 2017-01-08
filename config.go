@@ -14,6 +14,7 @@ import (
 	"github.com/coreos/ignition/config/types"
 	"github.com/coreos/ignition/config/validate/report"
 	"github.com/ghodss/yaml"
+	"github.com/src-d/combustion/transpiler"
 	"github.com/vincent-petithory/dataurl"
 	"srcd.works/go-billy.v1"
 	"srcd.works/go-billy.v1/os"
@@ -25,8 +26,9 @@ var DefaultIgnitionVersion = types.IgnitionVersion{Major: 2}
 var FileSystem billy.Filesystem = os.New("")
 
 type Config struct {
-	Includes map[string]Values `json:"include,omitempty"`
-	Output   string            `json:"output,omitempty"`
+	Imports map[string]Values `json:"import,omitempty"`
+	Output  string            `json:"output,omitempty"`
+	Type    string            `json:"type,omitempty"`
 	types.Config
 
 	dir  string // dir where the config is located
@@ -130,7 +132,7 @@ func (c *Config) resolve() error {
 }
 
 func (c *Config) doResolve(dir string, s stack) error {
-	for file, values := range c.Includes {
+	for file, values := range c.Imports {
 		fullpath := filepath.Join(dir, string(file))
 		if s.In(fullpath) {
 			return &ErrCircularDependency{s, fullpath}
@@ -175,8 +177,16 @@ func (c *Config) SaveTo(dir string) (report.Report, error) {
 	return c.Render(file)
 }
 
-func (c *Config) Render(w io.Writer) (report.Report, error) {
-	content, r, err := c.marshalToIgnition()
+func (c *Config) Render(w io.Writer) (r report.Report, err error) {
+	var content []byte
+
+	switch c.Type {
+	case "cloud-config":
+		content, r, err = c.marshalToCloudConfig()
+	default:
+		content, r, err = c.marshalToIgnition()
+	}
+
 	if err != nil {
 		return r, err
 	}
@@ -199,6 +209,12 @@ func (c *Config) marshalToIgnition() ([]byte, report.Report, error) {
 	}
 
 	return json, r, nil
+}
+
+func (c *Config) marshalToCloudConfig() ([]byte, report.Report, error) {
+	cc, r := transpiler.TranspileIgnition(&c.Config)
+	y, err := marchalToYAML(cc)
+	return y, r.Report, err
 }
 
 // Values interpolation values to replace on the Config

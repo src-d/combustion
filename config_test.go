@@ -17,24 +17,24 @@ func init() {
 
 func TestNewConfig(t *testing.T) {
 	WriteFixtures([][]string{{
-		"fixtures/include/foo.yaml",
-		"include:\n    baz.yaml:\n\nsystemd:\n  units:\n   - name: foo",
+		"fixtures/import/foo.yaml",
+		"import:\n    baz.yaml:\n\nsystemd:\n  units:\n   - name: foo",
 	}, {
-		"fixtures/include/baz.yaml",
-		"include:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: baz",
+		"fixtures/import/baz.yaml",
+		"import:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: baz",
 	}, {
-		"fixtures/include/bar.yaml",
-		"include:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: bar",
+		"fixtures/import/bar.yaml",
+		"import:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: bar",
 	}, {
-		"fixtures/include/folder/qux.yaml",
+		"fixtures/import/folder/qux.yaml",
 		"systemd:\n  units:\n   - name: qux",
 	}})
 
 	input := []byte("" +
 		"---\n" +
-		"include:\n" +
-		"  include/foo.yaml:\n" +
-		"  include/bar.yaml:\n" +
+		"import:\n" +
+		"  import/foo.yaml:\n" +
+		"  import/bar.yaml:\n" +
 		"",
 	)
 
@@ -51,12 +51,12 @@ func TestNewConfig(t *testing.T) {
 }
 
 func TestConfigResolveCircular(t *testing.T) {
-	WriteFixture("fixtures/circular/foo.yaml", "include:\n    bar.yaml:")
-	WriteFixture("fixtures/circular/bar.yaml", "include:\n    foo.yaml:")
+	WriteFixture("fixtures/circular/foo.yaml", "import:\n    bar.yaml:")
+	WriteFixture("fixtures/circular/bar.yaml", "import:\n    foo.yaml:")
 
 	input := []byte("" +
 		"---\n" +
-		"include:\n" +
+		"import:\n" +
 		"  circular/foo.yaml:\n" +
 		"",
 	)
@@ -70,7 +70,7 @@ func TestConfigResolveInterpolate(t *testing.T) {
 
 	input := []byte("" +
 		"---\n" +
-		"include:\n" +
+		"import:\n" +
 		"  interpolate/foo.yaml:\n" +
 		"    foo: bar\n" +
 		"",

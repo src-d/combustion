@@ -18,7 +18,7 @@ func init() {
 func TestNewConfig(t *testing.T) {
 	WriteFixtures([][]string{{
 		"fixtures/import/foo.yaml",
-		"import:\n    baz.yaml:\n\nsystemd:\n  units:\n   - name: foo",
+		"import:\n    baz.yaml:\n\nsystemd:\n  units:\n   - name: foo\n  conent: foo\n",
 	}, {
 		"fixtures/import/baz.yaml",
 		"import:\n    folder/qux.yaml:\n\nsystemd:\n  units:\n   - name: baz",
@@ -94,7 +94,9 @@ func TestConfigRender(t *testing.T) {
 		"  units:\n" +
 		"    - name: installer.service\n" +
 		"      enable: true\n" +
-		"      contents: foo\n" +
+		"      contents: |\n" +
+		"        [foo]\n" +
+		"        foo=bar\n" +
 		"",
 	)
 
@@ -103,8 +105,8 @@ func TestConfigRender(t *testing.T) {
 
 	buf := bytes.NewBuffer(nil)
 	r, err := c.Render(buf)
-	assert.Equal(t, r.IsFatal(), false)
 	assert.NoError(t, err)
+	assert.Equal(t, r.IsFatal(), false)
 
 	var result types.Config
 	err = json.Unmarshal(buf.Bytes(), &result)

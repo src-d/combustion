@@ -8,11 +8,11 @@ import (
 
 	"github.com/coreos/ignition/config/types"
 	"github.com/stretchr/testify/assert"
-	"srcd.works/go-billy.v1/memory"
+	"gopkg.in/src-d/go-billy.v2/memfs"
 )
 
 func init() {
-	FileSystem = memory.New()
+	FileSystem = memfs.New()
 }
 
 func TestNewConfig(t *testing.T) {

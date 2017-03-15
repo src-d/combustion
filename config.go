@@ -16,14 +16,14 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/src-d/combustion/transpiler"
 	"github.com/vincent-petithory/dataurl"
-	"srcd.works/go-billy.v1"
-	"srcd.works/go-billy.v1/os"
+	"gopkg.in/src-d/go-billy.v2"
+	"gopkg.in/src-d/go-billy.v2/osfs"
 )
 
 var DefaultIgnitionVersion = types.IgnitionVersion{Major: 2}
 
 // FileSystem used in any file operation
-var FileSystem billy.Filesystem = os.New("")
+var FileSystem billy.Filesystem = osfs.New("")
 
 type Config struct {
 	Imports map[string]Values `json:"import,omitempty"`

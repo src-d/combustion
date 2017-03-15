@@ -12,12 +12,14 @@ func TestDoStorage(t *testing.T) {
 	url, _ := url.Parse("data:,foo")
 	c := &types.Config{}
 	c.Storage.Files = []types.File{{
-		Filesystem: "root",
-		Path:       "/foo/bar",
+		Node: types.Node{
+			Filesystem: "root",
+			Path:       "/foo/bar",
+			Mode:       types.NodeMode(420),
+		},
 		Contents: types.FileContents{
 			Source: types.Url(*url),
 		},
-		Mode: types.FileMode(420),
 	}}
 
 	cc, _ := TranspileIgnition(c)
@@ -32,10 +34,14 @@ func TestDoStorage(t *testing.T) {
 func TestDoStorageUserAndGroup(t *testing.T) {
 	c := &types.Config{}
 	c.Storage.Files = []types.File{{
-		User: types.FileUser{Id: 42},
+		Node: types.Node{
+			User: types.NodeUser{Id: 42},
+		},
 	}, {
-		User:  types.FileUser{Id: 42},
-		Group: types.FileGroup{Id: 84},
+		Node: types.Node{
+			User:  types.NodeUser{Id: 42},
+			Group: types.NodeGroup{Id: 84},
+		},
 	}}
 
 	cc, _ := TranspileIgnition(c)

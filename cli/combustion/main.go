@@ -28,7 +28,7 @@ func main() {
 type Command struct {
 	Output string `short:"o" long:"output" description:"output folder"`
 	Input  struct {
-		Folders []string `positional-arg-name:"input" description:"List of folder to process"`
+		Folders []string `positional-arg-name:"input" description:"List of folders to process"`
 	} `positional-args:"yes"`
 
 	files []string
@@ -40,10 +40,11 @@ func (c *Command) Execute(args []string) error {
 	}
 
 	for _, file := range c.files {
-		c.render(file)
+		if err := c.render(file); err != nil {
+			return err
+		}
 	}
 
-	fmt.Println(c.files)
 	return nil
 }
 
@@ -78,9 +79,17 @@ func (c *Command) render(file string) error {
 		return err
 	}
 
+	if cfg.Output == "" {
+		return nil
+	}
+
+	cwd, _ := os.Getwd()
+	rel, err := filepath.Rel(cwd, filepath.Join(cwd, file))
+	fmt.Printf("%s -> %s\n", rel, cfg.Output)
+
 	r, err := cfg.SaveTo(c.Output)
-	fmt.Println(r)
 	if err != nil {
+		fmt.Println(r)
 		return err
 	}
 

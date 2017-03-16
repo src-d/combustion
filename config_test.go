@@ -2,13 +2,14 @@ package combustion
 
 import (
 	"bytes"
-	"encoding/json"
 	"sort"
 	"testing"
 
-	"github.com/coreos/ignition/config/types"
+	"github.com/coreos/container-linux-config-transpiler/config/types"
+	cc "github.com/coreos/coreos-cloudinit/config"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/src-d/go-billy.v2/memfs"
+	yaml "gopkg.in/yaml.v1"
 )
 
 func init() {
@@ -95,20 +96,17 @@ func TestConfigFixStorageFiles(t *testing.T) {
 		"  files:\n" +
 		"    - path: test\n" +
 		"      contents:\n" +
-		"        source: |\n" +
-		"          foo\n" +
-		"    - path: test\n" +
-		"      contents:\n" +
-		"        source: |\n" +
-		"          file:///foo.txt" +
+		"        remote: \n" +
+		"          url: |\n" +
+		"            file:///foo.txt" +
 		"",
 	)
 
 	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
 	assert.NoError(t, err)
 
-	assert.Equal(t, "data:,foo%0A", c.Storage.Files[0].Contents.Source.String())
-	assert.Equal(t, "data:,bar", c.Storage.Files[1].Contents.Source.String())
+	assert.Equal(t, "", c.Storage.Files[0].Contents.Remote.Url)
+	assert.Equal(t, "bar", c.Storage.Files[0].Contents.Inline)
 }
 
 func TestConfigRender(t *testing.T) {
@@ -133,11 +131,40 @@ func TestConfigRender(t *testing.T) {
 	assert.Equal(t, r.IsFatal(), false)
 
 	var result types.Config
-	err = json.Unmarshal(buf.Bytes(), &result)
+	err = yaml.Unmarshal(buf.Bytes(), &result)
 	assert.NoError(t, err)
 
-	assert.Equal(t, DefaultIgnitionVersion, result.Ignition.Version)
+	//assert.Equal(t, DefaultIgnitionVersion, result.Ignition.Version)
 	assert.Equal(t, 1, len(result.Systemd.Units))
+}
+
+func TestConfigRenderToCloudConfig(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"type: cloud-config\n" +
+		"systemd:\n" +
+		"  units:\n" +
+		"    - name: installer.service\n" +
+		"      enable: true\n" +
+		"      contents: |\n" +
+		"        [foo]\n" +
+		"        foo=bar\n" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
+	assert.NoError(t, err)
+
+	buf := bytes.NewBuffer(nil)
+	r, err := c.Render(buf)
+	assert.NoError(t, err)
+	assert.Equal(t, r.IsFatal(), false)
+
+	var result cc.CloudConfig
+	err = yaml.Unmarshal(buf.Bytes(), &result)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 1, len(result.CoreOS.Units))
 }
 
 func WriteFixtures(fixtures [][]string) {

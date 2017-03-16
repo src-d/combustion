@@ -11,4 +11,4 @@ systemd:
         Type=simple
         ExecStart=/opt/installer
         [Install]
-        WantedBy=multi-user.target
+        WantedBy=multi-user.targe

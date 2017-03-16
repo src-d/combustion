@@ -8,28 +8,28 @@ import (
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"text/template"
 
-	"github.com/coreos/ignition/config"
-	"github.com/coreos/ignition/config/types"
+	"github.com/coreos/container-linux-config-transpiler/config"
+	"github.com/coreos/container-linux-config-transpiler/config/types"
+	iconfig "github.com/coreos/ignition/config"
+	"github.com/coreos/ignition/config/validate"
 	"github.com/coreos/ignition/config/validate/report"
-	"github.com/ghodss/yaml"
 	"github.com/src-d/combustion/transpiler"
-	"github.com/vincent-petithory/dataurl"
 	"gopkg.in/src-d/go-billy.v2"
 	"gopkg.in/src-d/go-billy.v2/osfs"
+	"gopkg.in/yaml.v1"
 )
-
-var DefaultIgnitionVersion = types.IgnitionVersion{Major: 2}
 
 // FileSystem used in any file operation
 var FileSystem billy.Filesystem = osfs.New("")
 
 type Config struct {
-	Imports map[string]Values `json:"import,omitempty"`
-	Output  string            `json:"output,omitempty"`
-	Type    string            `json:"type,omitempty"`
+	Imports map[string]Values `yaml:"import,omitempty"`
+	Output  string            `yaml:"output,omitempty"`
+	Type    string            `yaml:"type,omitempty"`
 	types.Config
 
 	dir  string // dir where the config is located
@@ -67,10 +67,6 @@ func newConfig(r io.Reader, filename string, values map[string]string) (*Config,
 		return nil, err
 	}
 
-	if c.Ignition.Version.Major == 0 {
-		c.Ignition.Version = DefaultIgnitionVersion
-	}
-
 	return c, nil
 }
 
@@ -87,14 +83,18 @@ func (c *Config) Unmarshal(r io.Reader, values map[string]string) error {
 		return err
 	}
 
-	if err := yaml.Unmarshal(y, c); err != nil {
+	if err := yaml.Unmarshal(y, &c); err != nil {
 		return err
 	}
 
-	return c.fixStorageFiles()
+	if err := yaml.Unmarshal(y, &c.Config); err != nil {
+		return err
+	}
+
+	return c.loadLocalFiles()
 }
 
-var translateInterpolation = regexp.MustCompile(`{%(.+)%}`)
+var translateInterpolation = regexp.MustCompile(`{%(.+?)%}`)
 
 func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
 	t, err := template.New("t").Parse(string(content))
@@ -110,49 +110,42 @@ func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
 	return translateInterpolation.ReplaceAll(buf.Bytes(), []byte("{{$1}}")), nil
 }
 
-func (c *Config) fixStorageFiles() error {
+func (c *Config) loadLocalFiles() error {
 	for i, f := range c.Storage.Files {
-		if err := c.fixStorageFile(&f); err != err {
+		if err := c.loadLocalFile(&f); err != err {
 			return err
 		}
+
 		c.Storage.Files[i] = f
 	}
 
 	return nil
 }
 
-func (c *Config) fixStorageFile(f *types.File) error {
+func (c *Config) loadLocalFile(f *types.File) error {
 	// all the errors are ignored because if the url is real malformed will be
 	// identified by the validator
 
-	s := f.Contents.Source
-	_, err := dataurl.DecodeString(s.String())
-	if err == nil || err.Error() != "missing data prefix" {
-		return nil
-	}
-
-	raw, err := url.QueryUnescape(s.String())
+	u, err := url.Parse(f.Contents.Remote.Url)
 	if err != nil {
+		return err
+	}
+
+	if u.Scheme != "file" {
 		return nil
 	}
 
-	u, _ := url.Parse(raw)
-	if u != nil && u.Scheme == "file" {
-		raw, err = c.loadLocalFile(u)
-		if err != nil {
-			return err
-		}
+	raw, err := c.doloadLocalFile(u)
+	if err != nil {
+		return err
 	}
 
-	f.Contents.Source = types.Url{
-		Scheme: "data",
-		Opaque: "," + dataurl.EscapeString(raw),
-	}
-
+	f.Contents.Inline = raw
+	f.Contents.Remote.Url = ""
 	return nil
 }
 
-func (c *Config) loadLocalFile(u *url.URL) (string, error) {
+func (c *Config) doloadLocalFile(u *url.URL) (string, error) {
 	f, err := FileSystem.Open(filepath.Join(c.dir, u.Path[1:]))
 	if err != nil {
 		return "", err
@@ -198,7 +191,7 @@ func (c *Config) doResolve(dir string, s stack) error {
 }
 
 func (c *Config) append(src *Config) {
-	c.Config = config.Append(c.Config, src.Config)
+	c.Config = Append(c.Config, src.Config)
 }
 
 func (c *Config) SaveTo(dir string) (report.Report, error) {
@@ -222,8 +215,10 @@ func (c *Config) Render(w io.Writer) (r report.Report, err error) {
 	switch c.Type {
 	case "cloud-config":
 		content, r, err = c.marshalToCloudConfig()
-	default:
+	case "ignition":
 		content, r, err = c.marshalToIgnition()
+	default:
+		content, r, err = c.marshalToFuze()
 	}
 
 	if err != nil {
@@ -234,26 +229,39 @@ func (c *Config) Render(w io.Writer) (r report.Report, err error) {
 	return r, err
 }
 
-func (c *Config) marshalToIgnition() ([]byte, report.Report, error) {
-	var r report.Report
+func (c *Config) marshalToFuze() ([]byte, report.Report, error) {
+	r := validate.ValidateWithoutSource(reflect.ValueOf(c.Config))
+	yaml, err := marshalToYAML(c.Config)
+	return yaml, r, err
+}
 
-	json, err := json.MarshalIndent(c.Config, "", "  ")
+func (c *Config) marshalToIgnition() ([]byte, report.Report, error) {
+	r := validate.ValidateWithoutSource(reflect.ValueOf(c.Config))
+
+	ic, _ := config.ConvertAs2_0(c.Config)
+	json, err := json.MarshalIndent(ic, "", "  ")
 	if err != nil {
 		return nil, r, err
-	}
-
-	_, r, err = config.ParseFromLatest(json)
-	if err != nil {
-		return json, r, err
 	}
 
 	return json, r, nil
 }
 
 func (c *Config) marshalToCloudConfig() ([]byte, report.Report, error) {
-	cc, r := transpiler.TranspileIgnition(&c.Config)
-	y, err := marchalToYAML(cc)
-	return y, r.Report, err
+	raw, r, err := c.marshalToIgnition()
+	if err != nil {
+		return nil, r, err
+	}
+
+	ic, _, err := iconfig.ParseFromV2_0(raw)
+	if err != nil {
+		return nil, r, err
+	}
+
+	cc, _ := transpiler.TranspileIgnition(&ic)
+	y, err := marshalToYAML(cc)
+	return y, r, err
+
 }
 
 // Values interpolation values to replace on the Config

@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"text/template"
 
 	"github.com/coreos/ignition/config"
@@ -86,9 +87,14 @@ func (c *Config) Unmarshal(r io.Reader, values map[string]string) error {
 		return err
 	}
 
-	defer c.fixStorageFiles()
-	return yaml.Unmarshal(y, c)
+	if err := yaml.Unmarshal(y, c); err != nil {
+		return err
+	}
+
+	return c.fixStorageFiles()
 }
+
+var translateInterpolation = regexp.MustCompile(`{%(.+)%}`)
 
 func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
 	t, err := template.New("t").Parse(string(content))
@@ -101,30 +107,63 @@ func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	return translateInterpolation.ReplaceAll(buf.Bytes(), []byte("{{$1}}")), nil
 }
 
-func (c *Config) fixStorageFiles() {
-	// all the errors are ignored because if the url is real malformed will be
-	// identified by the validator
+func (c *Config) fixStorageFiles() error {
 	for i, f := range c.Storage.Files {
-		s := f.Contents.Source
-		u, err := dataurl.DecodeString(s.String())
-		if err == nil || err.Error() != "missing data prefix" {
-			continue
+		if err := c.fixStorageFile(&f); err != err {
+			return err
 		}
-
-		raw, err := url.QueryUnescape(s.String())
-		if err != nil {
-			continue
-		}
-
-		u = dataurl.New([]byte(raw), "text/plain")
-		pu, _ := url.Parse(u.String())
-		f.Contents.Source = types.Url(*pu)
-
 		c.Storage.Files[i] = f
 	}
+
+	return nil
+}
+
+func (c *Config) fixStorageFile(f *types.File) error {
+	// all the errors are ignored because if the url is real malformed will be
+	// identified by the validator
+
+	s := f.Contents.Source
+	_, err := dataurl.DecodeString(s.String())
+	if err == nil || err.Error() != "missing data prefix" {
+		return nil
+	}
+
+	raw, err := url.QueryUnescape(s.String())
+	if err != nil {
+		return nil
+	}
+
+	u, _ := url.Parse(raw)
+	if u != nil && u.Scheme == "file" {
+		raw, err = c.loadLocalFile(u)
+		if err != nil {
+			return err
+		}
+	}
+
+	f.Contents.Source = types.Url{
+		Scheme: "data",
+		Opaque: "," + dataurl.EscapeString(raw),
+	}
+
+	return nil
+}
+
+func (c *Config) loadLocalFile(u *url.URL) (string, error) {
+	f, err := FileSystem.Open(filepath.Join(c.dir, u.Path[1:]))
+	if err != nil {
+		return "", err
+	}
+
+	content, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
 }
 
 func (c *Config) resolve() error {

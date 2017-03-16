@@ -66,7 +66,7 @@ func TestConfigResolveCircular(t *testing.T) {
 }
 
 func TestConfigResolveInterpolate(t *testing.T) {
-	WriteFixture("fixtures/interpolate/foo.yaml", "systemd:\n  units:\n    - name: {{.foo}}")
+	WriteFixture("fixtures/interpolate/foo.yaml", "systemd:\n  units:\n    - name: {{.foo}} {% .foo %} ")
 
 	input := []byte("" +
 		"---\n" +
@@ -84,7 +84,31 @@ func TestConfigResolveInterpolate(t *testing.T) {
 		names = append(names, string(u.Name))
 	}
 
-	assert.EqualValues(t, []string{"bar"}, names)
+	assert.EqualValues(t, []string{"bar {{ .foo }}"}, names)
+}
+
+func TestConfigFixStorageFiles(t *testing.T) {
+	WriteFixture("fixtures/foo.txt", "bar")
+	input := []byte("" +
+		"---\n" +
+		"storage:\n" +
+		"  files:\n" +
+		"    - path: test\n" +
+		"      contents:\n" +
+		"        source: |\n" +
+		"          foo\n" +
+		"    - path: test\n" +
+		"      contents:\n" +
+		"        source: |\n" +
+		"          file:///foo.txt" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "data:,foo%0A", c.Storage.Files[0].Contents.Source.String())
+	assert.Equal(t, "data:,bar", c.Storage.Files[1].Contents.Source.String())
 }
 
 func TestConfigRender(t *testing.T) {

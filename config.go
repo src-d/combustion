@@ -238,7 +238,7 @@ func (c *Config) marshalToFuze() ([]byte, report.Report, error) {
 func (c *Config) marshalToIgnition() ([]byte, report.Report, error) {
 	r := validate.ValidateWithoutSource(reflect.ValueOf(c.Config))
 
-	ic, _ := config.ConvertAs2_0(c.Config)
+	ic, _ := config.ConvertAs2_0(c.Config, "")
 	json, err := json.MarshalIndent(ic, "", "  ")
 	if err != nil {
 		return nil, r, err

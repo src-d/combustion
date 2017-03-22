@@ -88,6 +88,20 @@ func TestConfigResolveInterpolate(t *testing.T) {
 	assert.EqualValues(t, []string{"bar {{ .foo }}"}, names)
 }
 
+func TestConfigResolveInterpolateMissing(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"systemd:\n" +
+		"  units:\n" +
+		"    - name: {{.foo}}\n" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
+	assert.Error(t, err)
+	assert.Nil(t, c)
+}
+
 func TestConfigFixStorageFiles(t *testing.T) {
 	WriteFixture("fixtures/foo.txt", "bar")
 	input := []byte("" +

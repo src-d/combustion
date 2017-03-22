@@ -97,7 +97,7 @@ func (c *Config) Unmarshal(r io.Reader, values map[string]string) error {
 var translateInterpolation = regexp.MustCompile(`{%(.+?)%}`)
 
 func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
-	t, err := template.New("t").Parse(string(content))
+	t, err := template.New("t").Option("missingkey=error").Parse(string(content))
 	if err != nil {
 		return nil, err
 	}

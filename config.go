@@ -47,7 +47,7 @@ func NewConfigFromFile(filename string, values map[string]string) (*Config, erro
 	return NewConfig(file, filename, values)
 }
 
-// NewConfig returns a new Config unmashaling the r content interpolated with
+// NewConfig returns a new Config unmarshaling the r content interpolated with
 // the given values. A dir, should be provided to be able to read and resolve
 // all the includes
 func NewConfig(r io.Reader, filename string, values map[string]string) (*Config, error) {
@@ -97,7 +97,8 @@ func (c *Config) Unmarshal(r io.Reader, values map[string]string) error {
 var translateInterpolation = regexp.MustCompile(`{%(.+?)%}`)
 
 func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
-	t, err := template.New("t").Option("missingkey=error").Parse(string(content))
+	name := filepath.Join(c.dir, c.name)
+	t, err := template.New(name).Option("missingkey=error").Parse(string(content))
 	if err != nil {
 		return nil, err
 	}

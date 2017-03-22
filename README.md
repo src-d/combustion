@@ -61,8 +61,7 @@ storage:
     - path: foo.txt
       contents:
         remote:
-          url: |
-            file:///foo.txt
+          url: file:///foo.txt
 ```
 
 And the `foo.txt`
@@ -80,4 +79,4 @@ storage:
     - path: foo.txt
       contents:
         inline: Hello World!
-``
+```

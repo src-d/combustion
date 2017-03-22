@@ -123,6 +123,24 @@ func TestConfigFixStorageFiles(t *testing.T) {
 	assert.Equal(t, "bar", c.Storage.Files[0].Contents.Inline)
 }
 
+func TestConfigFixStorageFilesMissingFile(t *testing.T) {
+	input := []byte("" +
+		"---\n" +
+		"storage:\n" +
+		"  files:\n" +
+		"    - path: test\n" +
+		"      contents:\n" +
+		"        remote: \n" +
+		"          url: |\n" +
+		"            file:///qux.txt" +
+		"",
+	)
+
+	c, err := NewConfig(bytes.NewBuffer(input), "fixtures/inline.yaml", nil)
+	assert.Error(t, err, "error opening \"fixtures/qux.txt\": file does not exist")
+	assert.Nil(t, c)
+}
+
 func TestConfigRender(t *testing.T) {
 	input := []byte("" +
 		"---\n" +
@@ -148,7 +166,6 @@ func TestConfigRender(t *testing.T) {
 	err = yaml.Unmarshal(buf.Bytes(), &result)
 	assert.NoError(t, err)
 
-	//assert.Equal(t, DefaultIgnitionVersion, result.Ignition.Version)
 	assert.Equal(t, 1, len(result.Systemd.Units))
 }
 

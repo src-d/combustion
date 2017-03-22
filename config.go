@@ -112,7 +112,7 @@ func (c *Config) interpolate(content []byte, v Values) ([]byte, error) {
 
 func (c *Config) loadLocalFiles() error {
 	for i, f := range c.Storage.Files {
-		if err := c.loadLocalFile(&f); err != err {
+		if err := c.loadLocalFile(&f); err != nil {
 			return err
 		}
 
@@ -123,9 +123,6 @@ func (c *Config) loadLocalFiles() error {
 }
 
 func (c *Config) loadLocalFile(f *types.File) error {
-	// all the errors are ignored because if the url is real malformed will be
-	// identified by the validator
-
 	u, err := url.Parse(f.Contents.Remote.Url)
 	if err != nil {
 		return err
@@ -135,7 +132,7 @@ func (c *Config) loadLocalFile(f *types.File) error {
 		return nil
 	}
 
-	raw, err := c.doloadLocalFile(u)
+	raw, err := c.doLoadLocalFile(u)
 	if err != nil {
 		return err
 	}
@@ -145,10 +142,11 @@ func (c *Config) loadLocalFile(f *types.File) error {
 	return nil
 }
 
-func (c *Config) doloadLocalFile(u *url.URL) (string, error) {
-	f, err := FileSystem.Open(filepath.Join(c.dir, u.Path[1:]))
+func (c *Config) doLoadLocalFile(u *url.URL) (string, error) {
+	filename := filepath.Join(c.dir, u.Path[1:])
+	f, err := FileSystem.Open(filename)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error opening %q: %s", filename, err)
 	}
 
 	content, err := ioutil.ReadAll(f)

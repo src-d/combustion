@@ -24,7 +24,7 @@ import (
 )
 
 // FileSystem used in any file operation
-var FileSystem billy.Filesystem = osfs.New("")
+var FileSystem billy.Filesystem = osfs.New("/")
 
 type Config struct {
 	Imports map[string]Values `yaml:"import,omitempty"`

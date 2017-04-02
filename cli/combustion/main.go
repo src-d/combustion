@@ -84,7 +84,7 @@ func (c *Command) render(file string) error {
 	}
 
 	cwd, _ := os.Getwd()
-	rel, err := filepath.Rel(cwd, filepath.Join(cwd, file))
+	rel, _ := filepath.Rel(cwd, filepath.Join(cwd, file))
 	fmt.Printf("%s -> %s\n", rel, cfg.Output)
 
 	r, err := cfg.SaveTo(c.Output)
